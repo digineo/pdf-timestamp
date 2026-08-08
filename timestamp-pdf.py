@@ -46,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="DocTimeStamp",
         help="Signature field name to use when signing (default: %(default)s)",
     )
+    sign_parser.add_argument(
+        "--no-ltv",
+        action="store_true",
+        help="Embed LTV validation info (DSS/VRI) after signing",
+    )
 
     extract_parser = subparsers.add_parser(
         "extract",
@@ -98,6 +103,30 @@ def _ensure_pdf_path(pdf_path: Path) -> None:
         raise IsADirectoryError(f"Input path is a directory: {pdf_path}")
 
 
+def _load_ltv_trust_roots() -> list[Any]:
+    from asn1crypto import pem, x509
+
+    cert_dir = Path(__file__).resolve().parent / "certs"
+    cert_candidates = sorted(cert_dir.glob("*.pem")) + sorted(cert_dir.glob("*.crt"))
+
+    roots: list[Any] = []
+    for cert_path in cert_candidates:
+        cert_data = cert_path.read_bytes()
+        if pem.detect(cert_data):
+            _, _, der_bytes = pem.unarmor(cert_data)
+        else:
+            der_bytes = cert_data
+        roots.append(x509.Certificate.load(der_bytes))
+
+    if not roots:
+        raise ValueError(
+            f"Missing LTV trust certificate files in {cert_dir}. "
+            "Add at least one .pem or .crt file."
+        )
+
+    return roots
+
+
 def sign_pdf(
     pdf_path: Path,
     tsa_url: str,
@@ -129,6 +158,63 @@ def sign_pdf(
         raise ValueError(f"Input PDF appears malformed: {pdf_path}") from exc
 
     return field_name
+
+
+def add_ltv_info(
+    pdf_path: Path,
+    field_name: str,
+) -> None:
+    from pyhanko.pdf_utils.misc import PdfReadError
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    from pyhanko.sign import validation
+    from pyhanko.sign.fields import enumerate_sig_fields
+    from pyhanko.sign.validation.errors import (
+        SignatureValidationError,
+        ValidationInfoReadingError,
+    )
+    from pyhanko.sign.validation.pdf_embedded import EmbeddedPdfSignature
+    from pyhanko_certvalidator import ValidationContext
+    from pyhanko_certvalidator.errors import PathError
+
+    _ensure_pdf_path(pdf_path)
+
+    try:
+        with pdf_path.open("rb+") as inout_stream:
+            reader = PdfFileReader(inout_stream)
+            target_field_ref = None
+            for found_field_name, value_ref, field_ref in enumerate_sig_fields(reader):
+                if found_field_name == field_name and value_ref is not None:
+                    target_field_ref = field_ref
+                    break
+
+            if target_field_ref is None:
+                raise ValueError(
+                    f"Could not locate signed field '{field_name}' for LTV update."
+                )
+
+            embedded_sig = EmbeddedPdfSignature(
+                reader,
+                target_field_ref.get_object(),
+                field_name,
+            )
+
+            validation_context = ValidationContext(
+                allow_fetching=True,
+                extra_trust_roots=_load_ltv_trust_roots(),
+            )
+            try:
+                validation.add_validation_info(
+                    embedded_sig,
+                    validation_context,
+                    in_place=True,
+                )
+            except (PathError, SignatureValidationError, ValidationInfoReadingError) as exc:
+                raise ValueError(
+                    "Unable to build/validate certificate path for LTV embedding. "
+                    "Configure TSA trust roots or use a TSA with a resolvable chain."
+                ) from exc
+    except PdfReadError as exc:
+        raise ValueError(f"PDF appears malformed while adding LTV: {pdf_path}") from exc
 
 
 def extract_timestamps(
@@ -190,7 +276,11 @@ def main() -> int:
                     timeout=args.timeout,
                     field_name=args.field_name,
                 )
+                if not args.no_ltv:
+                    add_ltv_info(pdf_path=pdf_path, field_name=field_name)
                 print(f"Signed {pdf_path}: field {field_name}")
+                if not args.no_ltv:
+                    print(f"LTV info embedded for {pdf_path}: field {field_name}")
             except (
                 FileNotFoundError,
                 IsADirectoryError,

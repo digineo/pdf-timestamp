@@ -14,32 +14,29 @@ pip install -r requirements.txt
 
 ## Usage
 
+Sign one or more PDFs in-place:
+
 ```bash
-python timestamp-pdf.py input.pdf [another.pdf ...] \
+python timestamp-pdf.py sign input.pdf another.pdf \
   --tsa-url "https://your-qualified-tsa.example/rfc3161"
 ```
 
-The script timestamps each provided input file in-place.
-
-Optional validation of TSA certs/revocation:
+Use a fixed signature field name when signing:
 
 ```bash
-python timestamp-pdf.py input.pdf another.pdf \
-  --tsa-url "https://your-qualified-tsa.example/rfc3161" \
-  --validate-tsa
+python timestamp-pdf.py sign input.pdf --field-name DocTimeStamp
 ```
 
-Verify signatures without modifying files:
+Don't embed LTV validation info (DSS/VRI) after signing:
 
 ```bash
-python timestamp-pdf.py input.pdf another.pdf --verify
+python timestamp-pdf.py sign input.pdf --no-ltv
 ```
 
-Sign and extract with separate commands (multiple PDFs supported):
+Extract RFC3161 timestamp values from one or more PDFs:
 
 ```bash
-python timestamp-pdf.py sign test.pdf another.pdf
-python timestamp-pdf.py extract test.pdf another.pdf
+python timestamp-pdf.py extract input.pdf another.pdf
 ```
 
 ## Notes
