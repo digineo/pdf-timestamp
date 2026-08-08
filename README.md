@@ -1,6 +1,6 @@
-# PDF Qualified Timestamp CLI (pyHanko)
+# PDF Timestamp Utilty
 
-This repository contains a Python CLI that attaches an RFC 3161 document timestamp to a PDF using `pyHanko`.
+This repository contains a Python CLI script that attaches an RFC 3161 document timestamp to a PDF using [pyHanko](https://github.com/MatthiasValvekens/pyHanko).
 
 A qualified timestamp depends on your TSA provider. To produce a qualified timestamp, use a qualified TSA endpoint with `--tsa-url`.
 
