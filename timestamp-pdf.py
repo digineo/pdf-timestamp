@@ -8,6 +8,20 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from asn1crypto import cms, pem, tsp, x509
+from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+from pyhanko.pdf_utils.misc import PdfReadError
+from pyhanko.pdf_utils.reader import PdfFileReader
+from pyhanko.sign import signers, timestamps, validation
+from pyhanko.sign.fields import enumerate_sig_fields
+from pyhanko.sign.validation.errors import (
+    SignatureValidationError,
+    ValidationInfoReadingError,
+)
+from pyhanko.sign.validation.pdf_embedded import EmbeddedPdfSignature
+from pyhanko_certvalidator import ValidationContext
+from pyhanko_certvalidator.errors import PathError
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -72,8 +86,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def extract_rfc3161_gen_time(signature_dict: dict[str, Any]) -> str:
     """Return RFC3161 genTime from a signature dictionary."""
-    from asn1crypto import cms, tsp
-
     contents = bytes(signature_dict["/Contents"]).rstrip(b"\x00")
     if not contents:
         raise ValueError("signature /Contents is empty")
@@ -104,8 +116,6 @@ def _ensure_pdf_path(pdf_path: Path) -> None:
 
 
 def _load_ltv_trust_roots() -> list[Any]:
-    from asn1crypto import pem, x509
-
     cert_dir = Path(__file__).resolve().parent / "certs"
     cert_candidates = sorted(cert_dir.glob("*.pem")) + sorted(cert_dir.glob("*.crt"))
 
@@ -134,10 +144,6 @@ def sign_pdf(
     timeout: int,
     field_name: str,
 ) -> str:
-    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
-    from pyhanko.pdf_utils.misc import PdfReadError
-    from pyhanko.sign import signers, timestamps
-
     _ensure_pdf_path(pdf_path)
 
     timestamper = timestamps.HTTPTimeStamper(url=tsa_url, timeout=timeout)
@@ -164,18 +170,6 @@ def add_ltv_info(
     pdf_path: Path,
     field_name: str,
 ) -> None:
-    from pyhanko.pdf_utils.misc import PdfReadError
-    from pyhanko.pdf_utils.reader import PdfFileReader
-    from pyhanko.sign import validation
-    from pyhanko.sign.fields import enumerate_sig_fields
-    from pyhanko.sign.validation.errors import (
-        SignatureValidationError,
-        ValidationInfoReadingError,
-    )
-    from pyhanko.sign.validation.pdf_embedded import EmbeddedPdfSignature
-    from pyhanko_certvalidator import ValidationContext
-    from pyhanko_certvalidator.errors import PathError
-
     _ensure_pdf_path(pdf_path)
 
     try:
@@ -221,10 +215,6 @@ def extract_timestamps(
     pdf_path: Path,
     field_name: str | None = None,
 ) -> list[tuple[str, str]]:
-    from pyhanko.pdf_utils.misc import PdfReadError
-    from pyhanko.pdf_utils.reader import PdfFileReader
-    from pyhanko.sign.fields import enumerate_sig_fields
-
     _ensure_pdf_path(pdf_path)
 
     try:
