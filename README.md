@@ -15,24 +15,18 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python pdf_qualified_timestamp.py input.pdf output.pdf \
+python pdf_qualified_timestamp.py input.pdf [another.pdf ...] \
   --tsa-url "https://your-qualified-tsa.example/rfc3161"
 ```
+
+The script timestamps each provided input file in-place.
 
 Optional validation of TSA certs/revocation:
 
 ```bash
-python pdf_qualified_timestamp.py input.pdf output.pdf \
+python pdf_qualified_timestamp.py input.pdf another.pdf \
   --tsa-url "https://your-qualified-tsa.example/rfc3161" \
   --validate-tsa
-```
-
-In-place mode:
-
-```bash
-python pdf_qualified_timestamp.py input.pdf input.pdf \
-  --tsa-url "https://your-qualified-tsa.example/rfc3161" \
-  --in-place
 ```
 
 ## Notes

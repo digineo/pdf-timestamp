@@ -12,10 +12,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
-from pyhanko.sign import signers, timestamps
-from pyhanko_certvalidator import ValidationContext
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -23,11 +19,14 @@ def build_parser() -> argparse.ArgumentParser:
             "Attach an RFC 3161 document timestamp signature to a PDF using pyHanko."
         )
     )
-    parser.add_argument("input_pdf", type=Path, help="Path to the input PDF file")
-    parser.add_argument("output_pdf", type=Path, help="Path for the timestamped PDF")
+    parser.add_argument(
+        "input_pdfs",
+        nargs="+",
+        type=Path,
+        help="Path(s) to input PDF file(s)",
+    )
     parser.add_argument(
         "--tsa-url",
-        required=True,
         default="https://timestamp.sectigo.com/qualified",
         help="RFC 3161 TSA URL (use a qualified TSA endpoint for qualified timestamps)",
     )
@@ -54,24 +53,14 @@ def build_parser() -> argparse.ArgumentParser:
             "Validate TSA certificates and allow fetching revocation data while timestamping"
         ),
     )
-    parser.add_argument(
-        "--in-place",
-        action="store_true",
-        help="Apply timestamp incrementally to the input file directly",
-    )
     return parser
 
 
-def _ensure_inputs(args: argparse.Namespace) -> None:
-    if not args.input_pdf.exists():
-        raise FileNotFoundError(f"Input file not found: {args.input_pdf}")
-    if args.in_place and args.output_pdf != args.input_pdf:
-        raise ValueError("With --in-place, output_pdf must be the same path as input_pdf.")
-    if not args.in_place and args.output_pdf.exists() and args.output_pdf.is_dir():
-        raise IsADirectoryError(f"Output path is a directory: {args.output_pdf}")
+def attach_timestamp(args: argparse.Namespace) -> bool:
+    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    from pyhanko.sign import signers, timestamps
+    from pyhanko_certvalidator import ValidationContext
 
-
-def attach_timestamp(args: argparse.Namespace) -> None:
     tsa_client = timestamps.HTTPTimeStamper(url=args.tsa_url, timeout=args.timeout)
 
     validation_context = None
@@ -83,23 +72,29 @@ def attach_timestamp(args: argparse.Namespace) -> None:
         field_name=args.field_name,
     )
 
-    with args.input_pdf.open("rb") as input_stream:
-        writer = IncrementalPdfFileWriter(input_stream)
-        if args.in_place:
-            pdf_timestamper.timestamp_pdf(
-                writer,
-                md_algorithm=args.md_algorithm,
-                validation_context=validation_context,
-                in_place=True,
-            )
-        else:
-            with args.output_pdf.open("wb") as output_stream:
+    has_errors = False
+    for input_pdf in args.input_pdfs:
+        try:
+            if not input_pdf.exists():
+                raise FileNotFoundError(f"Input file not found: {input_pdf}")
+            if input_pdf.is_dir():
+                raise IsADirectoryError(f"Input path is a directory: {input_pdf}")
+
+            with input_pdf.open("rb+") as input_stream:
+                writer = IncrementalPdfFileWriter(input_stream)
                 pdf_timestamper.timestamp_pdf(
                     writer,
                     md_algorithm=args.md_algorithm,
                     validation_context=validation_context,
-                    output=output_stream,
+                    in_place=True,
                 )
+        except (FileNotFoundError, IsADirectoryError, OSError, ValueError) as exc:
+            print(f"Error for {input_pdf}: {exc}", file=sys.stderr)
+            has_errors = True
+        else:
+            print(f"Timestamp added successfully: {input_pdf}")
+
+    return has_errors
 
 
 def main() -> int:
@@ -107,15 +102,12 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        _ensure_inputs(args)
-        attach_timestamp(args)
-    except Exception as exc:  # pragma: no cover
+        has_errors = attach_timestamp(args)
+    except ImportError as exc:  # pragma: no cover
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    target = args.input_pdf if args.in_place else args.output_pdf
-    print(f"Timestamp added successfully: {target}")
-    return 0
+    return 1 if has_errors else 0
 
 
 if __name__ == "__main__":
