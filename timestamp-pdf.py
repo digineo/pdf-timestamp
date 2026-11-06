@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     sign_parser.add_argument(
         "--no-ltv",
         action="store_true",
-        help="Embed LTV validation info (DSS/VRI) after signing",
+        help="Don't embed LTV validation info (DSS/VRI) after signing",
     )
 
     extract_parser = subparsers.add_parser(
