@@ -6,10 +6,10 @@ A qualified timestamp depends on your TSA provider. To produce a qualified times
 
 ## Install
 
+Requires [uv](https://docs.astral.sh/uv/). It installs the Python version from `.python-version` and the locked dependencies from `uv.lock`:
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 ```
 
 ## Usage
@@ -17,26 +17,32 @@ pip install -r requirements.txt
 Sign one or more PDFs in-place:
 
 ```bash
-python timestamp-pdf.py sign input.pdf another.pdf \
+uv run timestamp-pdf.py sign input.pdf another.pdf \
   --tsa-url "https://your-qualified-tsa.example/rfc3161"
 ```
 
 Use a fixed signature field name when signing:
 
 ```bash
-python timestamp-pdf.py sign input.pdf --field-name DocTimeStamp
+uv run timestamp-pdf.py sign input.pdf --field-name DocTimeStamp
 ```
 
 Don't embed LTV validation info (DSS/VRI) after signing:
 
 ```bash
-python timestamp-pdf.py sign input.pdf --no-ltv
+uv run timestamp-pdf.py sign input.pdf --no-ltv
 ```
 
 Extract RFC3161 timestamp values from one or more PDFs:
 
 ```bash
-python timestamp-pdf.py extract input.pdf another.pdf
+uv run timestamp-pdf.py extract input.pdf another.pdf
+```
+
+## Tests
+
+```bash
+uv run python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 ## Notes

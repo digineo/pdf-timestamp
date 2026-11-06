@@ -1,0 +1,10 @@
+[project]
+name = "timestamp-pdf"
+version = "0.1.0"
+description = "Attach and extract RFC 3161 document timestamps in PDFs"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "pyHanko>=0.25.0",
+]
