@@ -137,6 +137,23 @@ def _load_ltv_trust_roots() -> list[Any]:
     return roots
 
 
+def find_rfc3161_timestamp_fields(pdf_path: Path) -> list[str]:
+    """Return the names of filled signature fields holding an RFC3161 timestamp."""
+    _ensure_pdf_path(pdf_path)
+
+    try:
+        with pdf_path.open("rb") as input_stream:
+            reader = PdfFileReader(input_stream)
+            return [
+                found_field_name
+                for found_field_name, value_ref, _ in enumerate_sig_fields(reader)
+                if value_ref is not None
+                and str(value_ref.get_object().get("/SubFilter", "")) == "/ETSI.RFC3161"
+            ]
+    except PdfReadError as exc:
+        raise ValueError(f"Input PDF appears malformed: {pdf_path}") from exc
+
+
 def sign_pdf(
     pdf_path: Path,
     tsa_url: str,
@@ -259,6 +276,13 @@ def main() -> int:
     if args.command == "sign":
         for pdf_path in args.pdfs:
             try:
+                existing_fields = find_rfc3161_timestamp_fields(pdf_path)
+                if existing_fields:
+                    print(
+                        f"Skipped {pdf_path}: already contains RFC3161 timestamp "
+                        f"in field(s) {', '.join(existing_fields)}"
+                    )
+                    continue
                 field_name = sign_pdf(
                     pdf_path=pdf_path,
                     tsa_url=args.tsa_url,

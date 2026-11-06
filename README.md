@@ -49,4 +49,5 @@ uv run python -m unittest discover -s tests -p "test_*.py" -v
 
 - `--md-algorithm` defaults to `sha256`.
 - The script creates an incremental update in the PDF, preserving prior revisions.
+- `sign` skips PDFs that already contain an RFC3161 document timestamp and reports them as skipped (exit code 0). Other signatures don't prevent signing.
 - If your TSA requires custom auth headers or mTLS, extend the script's `HTTPTimeStamper` configuration.

@@ -1,8 +1,12 @@
 import importlib.util
+import io
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 from asn1crypto import keys as asn1_keys
 from asn1crypto import x509 as asn1_x509
@@ -137,6 +141,49 @@ class TimestampPdfIntegrationTest(unittest.TestCase):
             self.assertTrue(status.valid)
             self.assertTrue(status.trusted)
             self.assertTrue(status.intact and status.valid and status.trusted)
+
+    def test_find_rfc3161_timestamp_fields_on_unsigned_pdf(self):
+        timestamp_pdf = _load_script_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "sample.pdf"
+            _create_simple_pdf(pdf_path)
+
+            self.assertEqual(timestamp_pdf.find_rfc3161_timestamp_fields(pdf_path), [])
+
+    def test_sign_skips_pdf_with_existing_timestamp(self):
+        timestamp_pdf = _load_script_module()
+        tsa_cert, tsa_key = _make_dummy_tsa_material()
+        dummy_timestamper = timestamps.DummyTimeStamper(tsa_cert=tsa_cert, tsa_key=tsa_key)
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            mock.patch.object(
+                timestamp_pdf.timestamps,
+                "HTTPTimeStamper",
+                lambda url, timeout: dummy_timestamper,
+            ),
+        ):
+            pdf_path = Path(temp_dir) / "sample.pdf"
+            _create_simple_pdf(pdf_path)
+
+            argv = ["timestamp-pdf.py", "sign", str(pdf_path), "--no-ltv"]
+            with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                self.assertEqual(timestamp_pdf.main(), 0)
+
+            self.assertEqual(
+                timestamp_pdf.find_rfc3161_timestamp_fields(pdf_path), ["DocTimeStamp"]
+            )
+            signed_bytes = pdf_path.read_bytes()
+
+            stdout = io.StringIO()
+            argv = [*argv, "--field-name", "Other"]
+            with mock.patch.object(sys, "argv", argv), redirect_stdout(stdout):
+                self.assertEqual(timestamp_pdf.main(), 0)
+
+            self.assertEqual(pdf_path.read_bytes(), signed_bytes)
+            self.assertIn(f"Skipped {pdf_path}", stdout.getvalue())
+            self.assertIn("DocTimeStamp", stdout.getvalue())
 
 
 if __name__ == "__main__":
