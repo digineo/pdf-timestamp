@@ -4,7 +4,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -63,8 +63,8 @@ def _make_dummy_tsa_material() -> tuple[asn1_x509.Certificate, asn1_keys.Private
         .issuer_name(issuer)
         .public_key(private_key.public_key())
         .serial_number(crypto_x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
+        .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=365))
         .add_extension(crypto_x509.BasicConstraints(ca=True, path_length=None), critical=True)
         .sign(private_key, hashes.SHA256())
     )
@@ -93,9 +93,11 @@ class TimestampPdfIntegrationTest(unittest.TestCase):
                 tsa_key=tsa_key,
             )
 
-            original_http_timestamper = timestamp_pdf.timestamps.HTTPTimeStamper
-            timestamp_pdf.timestamps.HTTPTimeStamper = lambda url, timeout: dummy_timestamper
-            try:
+            with mock.patch.object(
+                timestamp_pdf.timestamps,
+                "HTTPTimeStamper",
+                lambda url, timeout: dummy_timestamper,
+            ):
                 field_name = timestamp_pdf.sign_pdf(
                     pdf_path=pdf_path,
                     tsa_url="https://example.invalid/rfc3161",
@@ -103,8 +105,6 @@ class TimestampPdfIntegrationTest(unittest.TestCase):
                     timeout=5,
                     field_name="DocTimeStamp",
                 )
-            finally:
-                timestamp_pdf.timestamps.HTTPTimeStamper = original_http_timestamper
 
             extracted = timestamp_pdf.extract_timestamps(pdf_path, field_name=field_name)
             self.assertEqual(len(extracted), 1)
@@ -119,7 +119,6 @@ class TimestampPdfIntegrationTest(unittest.TestCase):
                         target_field_ref = field_ref
                         break
 
-                self.assertIsNotNone(target_field_ref)
                 if target_field_ref is None:
                     self.fail(f"Signed field {field_name} was not found in the PDF")
 

@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Sign PDFs with RFC3161 timestamps and extract RFC3161 timestamp values."""
 
-from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
 
 from asn1crypto import cms, pem, tsp, x509
+from pyhanko.pdf_utils import generic
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.pdf_utils.misc import PdfReadError
 from pyhanko.pdf_utils.reader import PdfFileReader
@@ -21,6 +19,11 @@ from pyhanko.sign.validation.errors import (
 from pyhanko.sign.validation.pdf_embedded import EmbeddedPdfSignature
 from pyhanko_certvalidator import ValidationContext
 from pyhanko_certvalidator.errors import PathError
+
+RFC3161_SUBFILTER = "/ETSI.RFC3161"
+
+# Errors reported per file by the CLI; processing continues with the next file.
+CLI_ERRORS = (ImportError, OSError, ValueError)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def extract_rfc3161_gen_time(signature_dict: dict[str, Any]) -> str:
+def extract_rfc3161_gen_time(signature_dict: generic.DictionaryObject) -> str:
     """Return RFC3161 genTime from a signature dictionary."""
     contents = bytes(signature_dict["/Contents"]).rstrip(b"\x00")
     if not contents:
@@ -115,11 +118,11 @@ def _ensure_pdf_path(pdf_path: Path) -> None:
         raise IsADirectoryError(f"Input path is a directory: {pdf_path}")
 
 
-def _load_ltv_trust_roots() -> list[Any]:
+def _load_ltv_trust_roots() -> list[x509.Certificate]:
     cert_dir = Path(__file__).resolve().parent / "certs"
     cert_candidates = sorted(cert_dir.glob("*.pem")) + sorted(cert_dir.glob("*.crt"))
 
-    roots: list[Any] = []
+    roots: list[x509.Certificate] = []
     for cert_path in cert_candidates:
         cert_data = cert_path.read_bytes()
         if pem.detect(cert_data):
@@ -148,7 +151,7 @@ def find_rfc3161_timestamp_fields(pdf_path: Path) -> list[str]:
                 found_field_name
                 for found_field_name, value_ref, _ in enumerate_sig_fields(reader)
                 if value_ref is not None
-                and str(value_ref.get_object().get("/SubFilter", "")) == "/ETSI.RFC3161"
+                and str(value_ref.get_object().get("/SubFilter", "")) == RFC3161_SUBFILTER
             ]
     except PdfReadError as exc:
         raise ValueError(f"Input PDF appears malformed: {pdf_path}") from exc
@@ -248,7 +251,7 @@ def extract_timestamps(
 
                 signature_dict = value_ref.get_object()
                 subfilter = str(signature_dict.get("/SubFilter", ""))
-                if subfilter != "/ETSI.RFC3161":
+                if subfilter != RFC3161_SUBFILTER:
                     if field_name is None:
                         continue
                     raise ValueError(
@@ -266,7 +269,7 @@ def extract_timestamps(
                 raise ValueError(f"Could not find signature field: {field_name}")
             raise ValueError("No RFC3161 timestamp signatures found in the PDF.")
     except PdfReadError as exc:
-        raise ValueError(f"Signed PDF appears malformed after update: {pdf_path}") from exc
+        raise ValueError(f"Input PDF appears malformed: {pdf_path}") from exc
 
 
 def main() -> int:
@@ -295,34 +298,22 @@ def main() -> int:
                 print(f"Signed {pdf_path}: field {field_name}")
                 if not args.no_ltv:
                     print(f"LTV info embedded for {pdf_path}: field {field_name}")
-            except (
-                FileNotFoundError,
-                IsADirectoryError,
-                ImportError,
-                OSError,
-                ValueError,
-            ) as exc:
+            except CLI_ERRORS as exc:
                 print(f"Error for {pdf_path}: {exc}", file=sys.stderr)
                 has_errors = True
 
     elif args.command == "extract":
         for pdf_path in args.pdfs:
             try:
-                timestamps = extract_timestamps(
+                found_timestamps = extract_timestamps(
                     pdf_path=pdf_path,
                     field_name=args.field_name,
                 )
                 print(f"PDF: {pdf_path}")
-                for extracted_field_name, gen_time in timestamps:
+                for extracted_field_name, gen_time in found_timestamps:
                     print(f"  Field: {extracted_field_name}")
                     print(f"  RFC3161 genTime: {gen_time}")
-            except (
-                FileNotFoundError,
-                IsADirectoryError,
-                ImportError,
-                OSError,
-                ValueError,
-            ) as exc:
+            except CLI_ERRORS as exc:
                 print(f"Error for {pdf_path}: {exc}", file=sys.stderr)
                 has_errors = True
 
